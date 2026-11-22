@@ -1,0 +1,9 @@
+numpy
+scipy
+pandas
+matplotlib
+torch
+tqdm
+requests
+jupyter
+pytest

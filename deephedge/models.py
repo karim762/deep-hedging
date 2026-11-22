@@ -62,19 +62,28 @@ class PositionHedge(nn.Module):
     to the target, adjusting it costs more than it protects. Each network therefore receives the
     current price and the current holding (plus optional extra features Z, such as a volatility
     signal) and outputs the trade; doing nothing is an output of zero.
+
+    By default inputs are standardised date by date with training statistics. With
+    standardise=False they are used as given (the caller scales Z), which generalises better when
+    a feature takes only a few values in training, such as the maturity in part 5.
     """
 
-    def __init__(self, S_train, Z_train=None, n_hidden=32, n_thresholds=1):
+    def __init__(self, S_train, Z_train=None, n_hidden=32, n_thresholds=1, standardise=True):
         super().__init__()
         n_steps = S_train.shape[1] - 1
         n_extra = 0 if Z_train is None else Z_train.shape[2]
         self.networks = nn.ModuleList([DateNet(2 + n_extra, n_hidden) for _ in range(n_steps)])
         self.w = nn.Parameter(torch.zeros(n_thresholds))
         loc, scale = _date_stats(S_train[:, :-1, None])
+        if not standardise:
+            # inputs already on a common scale: prices around s0 = 1, with moves of order 20%
+            loc, scale = torch.ones_like(loc), torch.full_like(scale, 0.2)
         self.register_buffer("s_loc", loc[:, 0])
         self.register_buffer("s_scale", scale[:, 0])
         if n_extra:
             loc, scale = _date_stats(Z_train)
+            if not standardise:
+                loc, scale = torch.zeros_like(loc), torch.ones_like(scale)
             self.register_buffer("z_loc", loc)
             self.register_buffer("z_scale", scale)
 

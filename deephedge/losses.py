@@ -44,3 +44,13 @@ def turnover(H):
     """Total number of shares traded along each path, including the first and the last trade."""
     H_full = torch.cat([torch.zeros_like(H[:, :1]), H, torch.zeros_like(H[:, :1])], dim=1)
     return (H_full[:, 1:] - H_full[:, :-1]).abs().sum(dim=1)
+
+
+def grouped_avar_objective(X, w, groups, alpha):
+    """Mean over groups of the Rockafellar-Uryasev objective, with one threshold w[g] per group.
+
+    Used when one network hedges several contracts: each contract weighs the same in the objective,
+    whatever the size of its losses.
+    """
+    terms = [w[g] + torch.relu(X[groups == g] - w[g]).mean() / (1 - alpha) for g in groups.unique()]
+    return torch.stack(terms).mean()

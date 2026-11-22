@@ -4,7 +4,7 @@ import torch
 from deephedge import benchmarks as bm
 from deephedge import blackscholes as bs
 from deephedge import simulate
-from deephedge.losses import avar, avar_objective, hedging_loss, trading_costs
+from deephedge.losses import avar, avar_objective, grouped_avar_objective, hedging_loss, trading_costs
 from deephedge.models import PositionHedge, StateHedge
 
 
@@ -83,3 +83,25 @@ def test_policies_only_use_past_information():
             H, H_future = run(model, S), run(model, S_future)
         assert torch.equal(H[:, :16], H_future[:, :16])   # decisions up to t_15 are unchanged
         assert not torch.equal(H[:, 16:], H_future[:, 16:])
+
+
+def test_grouped_objective_with_one_group_is_the_plain_objective():
+    X = torch.randn(1000)
+    w = torch.tensor([0.3])
+    groups = torch.zeros(1000, dtype=torch.long)
+    assert torch.allclose(grouped_avar_objective(X, w, groups, 0.9), avar_objective(X, w[0], 0.9))
+
+
+def test_contract_paths_follow_their_own_maturity_and_volatility():
+    S, info = simulate.contract_paths([(1.0, 0.125, 1, 0.25), (1.0, 0.5, -1, 0.7)], 50_000, seed=0)
+    for g, (T, sigma) in enumerate([(0.125, 0.25), (0.5, 0.7)]):
+        log_ST = S[info["group"] == g, -1].log()
+        assert abs(log_ST.std().item() / (sigma * T**0.5) - 1) < 0.02
+
+
+def test_benchmarks_accept_one_contract_per_path():
+    S, info = simulate.contract_paths([(0.95, 0.25, -1)], 2000, seed=1)
+    H_scalar = bm.band_holdings(S, 0.01, 0.15, 0.35, K=0.95, T=0.25, kind=-1)
+    H_paths = bm.band_holdings(S, 0.01, torch.full((2000,), 0.15), 0.35, info["K"], info["T"], info["kind"])
+    assert torch.allclose(H_scalar, H_paths)
+

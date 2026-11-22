@@ -54,3 +54,24 @@ def heston_stock(V, seed, rho=-0.3, a=4.0, b=0.5, sigma_v=1.0, T=0.25, s0=1.0):
                       + np.sqrt((1 - rho**2) * V[:, j] * h) * z[:, j])
         S[:, j + 1] = S[:, j] * np.exp(log_return)
     return S
+
+
+def contract_paths(contracts, paths_per_contract, seed, sigma=0.35, n_steps=30, s0=1.0):
+    """Black-Scholes paths for several contracts, each with its own maturity and the same number of
+    trading dates. A contract is (K, T, kind) or (K, T, kind, sigma).
+
+    Returns S of shape (m, n_steps + 1) and a dict of per-path tensors K, T, kind, sigma and group,
+    in random order.
+    """
+    gen = torch.Generator().manual_seed(seed)
+    groups = torch.arange(len(contracts)).repeat_interleave(paths_per_contract)
+    terms = torch.tensor([tuple(c) + ((sigma,) if len(c) == 3 else ()) for c in contracts], dtype=torch.float64)[groups]
+    h = (terms[:, 1] / n_steps)[:, None]
+    vol = terms[:, 3:4]
+    z = torch.randn(len(groups), n_steps, generator=gen, dtype=torch.float64)
+    log_s = torch.cat([torch.zeros(len(groups), 1, dtype=torch.float64),
+                       (-0.5 * vol**2 * h + vol * h.sqrt() * z).cumsum(dim=1)], dim=1)
+    order = torch.randperm(len(groups), generator=gen)
+    info = dict(K=terms[:, 0], T=terms[:, 1], kind=terms[:, 2], sigma=terms[:, 3], group=groups)
+    return s0 * torch.exp(log_s)[order], {k: v[order] for k, v in info.items()}
+

@@ -6,15 +6,23 @@ from . import blackscholes as bs
 from .losses import avar, hedging_loss
 
 
+def _by_path(x):
+    """A per-path tensor of shape (m,) becomes (m, 1), to broadcast against the dates."""
+    x = torch.as_tensor(x, dtype=torch.float64)
+    return x[:, None] if x.ndim == 1 else x
+
+
 def time_to_maturity(T, n_steps):
-    """tau_j = T - t_j at the trading dates t_0, ..., t_{N-1}."""
+    """tau_j = T - t_j at the trading dates t_0, ..., t_{N-1}; T may differ by path."""
+    T = _by_path(T)
     return T - torch.arange(n_steps, dtype=torch.float64) * (T / n_steps)
 
 
 def delta_holdings(S, sigma, K=1.0, T=0.25, kind=1):
-    """Black-Scholes delta at every trading date, shape (m, N). sigma may vary by path and date."""
+    """Black-Scholes delta at every trading date, shape (m, N).
+    sigma may be a scalar, one value per path, or one per path and date; K, T and kind may vary by path."""
     tau = time_to_maturity(T, S.shape[1] - 1)
-    return bs.delta(S[:, :-1], K, tau, sigma, kind)
+    return bs.delta(S[:, :-1], _by_path(K), tau, _by_path(sigma), _by_path(kind))
 
 
 def band_holdings(S, eps, c, sigma, K=1.0, T=0.25, kind=1):
@@ -26,7 +34,8 @@ def band_holdings(S, eps, c, sigma, K=1.0, T=0.25, kind=1):
     constant is absorbed into the factor c, which is tuned on simulated paths.
     """
     tau = time_to_maturity(T, S.shape[1] - 1)
-    D = bs.delta(S[:, :-1], K, tau, sigma, kind)
+    K, sigma, c = _by_path(K), _by_path(sigma), _by_path(c)
+    D = bs.delta(S[:, :-1], K, tau, sigma, _by_path(kind))
     B = c * (eps * S[:, :-1] * bs.gamma(S[:, :-1], K, tau, sigma) ** 2) ** (1 / 3)
     h = D[:, 0]
     H = [h]

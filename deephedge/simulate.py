@@ -75,3 +75,43 @@ def contract_paths(contracts, paths_per_contract, seed, sigma=0.35, n_steps=30, 
     info = dict(K=terms[:, 0], T=terms[:, 1], kind=terms[:, 2], sigma=terms[:, 3], group=groups)
     return s0 * torch.exp(log_s)[order], {k: v[order] for k, v in info.items()}
 
+
+def sv_paths(contracts, paths_per_contract, seed, eta=0.75, kappa=8.0, leverage=-0.4, n_history=120, n_steps=30, s0=1.0):
+    """Paths with a mean-reverting log-volatility, for contracts (K, T, kind, base volatility).
+
+    log sigma reverts to log(base volatility) at speed kappa with volatility eta, and its shocks are
+    correlated with the price shocks (leverage < 0: volatility rises when prices fall). eta = 0 gives
+    constant volatility. Each path has n_history observation steps before t_0, of the same length
+    T / n_steps, from which volatility can be estimated.
+
+    Returns S (m, n_steps + 1), the per-path info dict of contract_paths, and all log returns
+    (m, n_history + n_steps).
+    """
+    gen = torch.Generator().manual_seed(seed)
+    groups = torch.arange(len(contracts)).repeat_interleave(paths_per_contract)
+    terms = torch.tensor(contracts, dtype=torch.float64)[groups]
+    m, n = len(groups), n_history + n_steps
+    h = terms[:, 1] / n_steps
+    rho = torch.exp(-kappa * h)
+    shock = eta * torch.sqrt((1 - rho**2) / (2 * kappa))
+    z_price = torch.randn(m, n, generator=gen, dtype=torch.float64)
+    z_vol = leverage * z_price + (1 - leverage**2) ** 0.5 * torch.randn(m, n, generator=gen, dtype=torch.float64)
+    mu = torch.log(terms[:, 3])
+    log_vol = mu.clone()
+    R = torch.empty(m, n, dtype=torch.float64)
+    for j in range(n):
+        vol = log_vol.exp().clamp(0.10, 0.95)
+        R[:, j] = -0.5 * vol**2 * h + vol * h.sqrt() * z_price[:, j]
+        log_vol = mu + rho * (log_vol - mu) + shock * z_vol[:, j]
+    S = s0 * torch.exp(torch.cat([torch.zeros(m, 1, dtype=torch.float64), R[:, n_history:].cumsum(dim=1)], dim=1))
+    info = dict(K=terms[:, 0], T=terms[:, 1], kind=terms[:, 2], sigma=terms[:, 3], group=groups)
+    return S, info, R
+
+
+def realised_vol(R, T, window, n_steps=30):
+    """Annualised volatility estimated before each trading date from the last `window` returns only.
+    R holds the history followed by the hedging period, as returned by sv_paths. Shape (m, n_steps)."""
+    n_history = R.shape[1] - n_steps
+    h = torch.as_tensor(T, dtype=torch.float64).reshape(-1, 1) / n_steps
+    est = torch.stack([R[:, n_history + j - window:n_history + j].std(dim=1) for j in range(n_steps)], dim=1)
+    return (est / h.sqrt()).clamp(0.05, 1.5)

@@ -105,3 +105,11 @@ def test_benchmarks_accept_one_contract_per_path():
     H_paths = bm.band_holdings(S, 0.01, torch.full((2000,), 0.15), 0.35, info["K"], info["T"], info["kind"])
     assert torch.allclose(H_scalar, H_paths)
 
+
+def test_volatility_estimate_uses_only_past_returns():
+    S, info, R = simulate.sv_paths([(1.0, 0.25, 1, 0.3)], 500, seed=2)
+    v = simulate.realised_vol(R, info["T"], 20)
+    R_future = R.clone()
+    R_future[:, 120 + 10:] *= 3                                   # change returns from t_10 on
+    v_future = simulate.realised_vol(R_future, info["T"], 20)
+    assert torch.equal(v[:, :11], v_future[:, :11])               # estimates up to t_10 are unchanged

@@ -46,10 +46,13 @@ class StateHedge(nn.Module):
         self.register_buffer("loc", loc)
         self.register_buffer("scale", scale)
 
+    def decision(self, j, x):
+        """Holding chosen at t_j for states x of shape (m, d)."""
+        return self.networks[j]((x - self.loc[j]) / self.scale[j])
+
     def forward(self, X):
         """X: (m, N, d) -> holdings (m, N)."""
-        return torch.stack([net((X[:, j] - self.loc[j]) / self.scale[j])
-                            for j, net in enumerate(self.networks)], dim=1)
+        return torch.stack([self.decision(j, X[:, j]) for j in range(len(self.networks))], dim=1)
 
 
 class PositionHedge(nn.Module):

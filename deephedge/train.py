@@ -5,7 +5,7 @@ fixes both the initial weights and the order of the mini-batches.
 """
 import torch
 from torch.utils.data import DataLoader, TensorDataset
-from tqdm.auto import tqdm
+from tqdm import tqdm
 
 
 def fit(model, tensors, loss_fn, n_epochs=30, batch_size=1000, lr=1e-3, milestones=(18, 25),

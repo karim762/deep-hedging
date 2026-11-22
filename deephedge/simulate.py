@@ -1,7 +1,8 @@
 """Price paths under the two models of parts 1-3.
 
 All paths live on the uniform grid t_j = j T / N, j = 0, ..., N, and have shape (n_paths, N + 1).
-The interest rate is zero throughout, so prices are martingales under the simulation measure.
+The interest rate is zero throughout. GBM paths are exact martingales; the Heston stock scheme is a
+martingale only up to a small discretisation bias.
 """
 import numpy as np
 import torch
